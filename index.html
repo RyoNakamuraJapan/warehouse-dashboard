@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>warehouse-dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+:root {
+  --bg:      #f5f4f0;
+  --surface: #ffffff;
+  --surface2:#f0ede8;
+  --border:  #ddd8d0;
+  --text:    #1a1a1a;
+  --muted:   #7a7570;
+  --dim:     #c0bdb8;
+  --green:   #16a34a;
+  --red:     #dc2626;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Noto Sans JP', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* HEADER */
+header {
+  background: var(--text); color: #fff;
+  padding: 18px 32px;
+  display: flex; align-items: flex-end; gap: 16px;
+}
+.h-title { }
+.h-title .sub { font-size: 10px; color: #888; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .1em; }
+.h-title h1  { font-size: 18px; font-weight: 700; }
+.spacer { flex: 1; }
+.sync-box {
+  text-align: right;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: #777; line-height: 1.8;
+}
+.sync-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #555; margin-right: 4px; vertical-align: middle;
+  transition: background .3s;
+}
+.sync-dot.ok  { background: #4ade80; }
+.sync-dot.err { background: #f87171; }
+
+/* CONTROLS */
+.controls {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 12px 32px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.ctrl-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+select {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 12px; border-radius: 4px;
+  font-family: 'Noto Sans JP', sans-serif; font-size: 13px;
+  outline: none; cursor: pointer;
+}
+.legend-pills { display: flex; gap: 7px; flex-wrap: wrap; }
+.lpill {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--muted); cursor: pointer;
+  padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface2);
+  transition: all .15s; user-select: none;
+}
+.lpill .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.lpill.active { color: var(--text); background: #fff; border-color: #999; }
+.btn-reload {
+  margin-left: auto; padding: 6px 16px;
+  background: var(--text); color: #fff;
+  border: none; border-radius: 4px; cursor: pointer;
+  font-family: 'Noto Sans JP', sans-serif; font-size: 12px;
+  display: flex; align-items: center; gap: 6px; transition: opacity .15s;
+}
+.btn-reload:hover { opacity: .8; }
+.btn-reload:disabled { opacity: .4; cursor: default; }
+.spin { animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* MAIN */
+main { padding: 22px 32px; display: flex; flex-direction: column; gap: 18px; max-width: 1440px; margin: 0 auto; }
+
+/* LOADING OVERLAY */
+.overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(245,244,240,.88); z-index: 300;
+  align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+}
+.overlay.show { display: flex; }
+.spinner {
+  width: 40px; height: 40px; border: 3px solid var(--border);
+  border-top-color: var(--text); border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+.overlay p { font-size: 14px; color: var(--muted); }
+
+/* ERROR */
+.error-bar {
+  display: none; background: #fef2f2; border: 1px solid #fecaca;
+  color: var(--red); padding: 10px 18px; border-radius: 6px; font-size: 13px;
+}
+.error-bar.show { display: block; }
+
+/* KPI */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr));
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+}
+.kpi-card { background: var(--surface); padding: 18px 18px 14px; }
+.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing:.1em; color: var(--muted); margin-bottom: 8px; }
+.kpi-val   { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 600; line-height:1; }
+.kpi-sub   { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.kpi-delta {
+  display: inline-block; font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 2px 5px; border-radius: 3px; margin-top: 5px;
+}
+.kpi-delta.up   { background:#fef2f2; color:var(--red); }
+.kpi-delta.down { background:#f0fdf4; color:var(--green); }
+
+/* PANELS */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 22px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.panel-title { font-size: 13px; font-weight: 700; }
+.panel-badge { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); background:var(--surface2); padding:3px 8px; border-radius:3px; }
+.chart-row { display: grid; grid-template-columns: 2.2fr 1fr; gap: 18px; }
+
+/* TABLE */
+.tpanel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.tpanel .panel-head { padding: 18px 22px 0; margin-bottom: 0; }
+.tscroll { overflow-x: auto; max-height: 400px; overflow-y: auto; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+thead th {
+  background: var(--surface2); position: sticky; top: 0;
+  padding: 9px 12px; text-align: right;
+  font-weight: 600; font-size: 10px; text-transform: uppercase;
+  letter-spacing:.06em; color: var(--muted); white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+thead th:first-child { text-align:left; }
+tbody tr { border-bottom: 1px solid #f0ede8; transition: background .1s; }
+tbody tr:hover { background: var(--surface2); }
+tbody td { padding:9px 12px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; white-space:nowrap; }
+tbody td:first-child { text-align:left; font-family:'Noto Sans JP',sans-serif; font-size:12px; font-weight:500; }
+.dc { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+.cell-zero { color: var(--dim); }
+tr.total-row { background: var(--surface2); border-top: 2px solid var(--border); }
+tr.total-row td { font-weight: 700; }
+
+@media(max-width:860px){
+  .chart-row { grid-template-columns:1fr; }
+  header,.controls,main { padding-left:16px; padding-right:16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="overlay" id="ov"><div class="spinner"></div><p>スプレッドシートを読み込んでいます…</p></div>
+
+<header>
+  <div class="h-title">
+    <div class="sub">Live from Google Sheets · FedEx 除く</div>
+    <h1>倉庫費用ダッシュボード</h1>
+  </div>
+  <div class="spacer"></div>
+  <div class="sync-box">
+    <span class="sync-dot" id="syncDot"></span><span id="syncSt">読み込み中…</span><br>
+    <span id="syncTime">—</span>
+  </div>
+</header>
+
+<div class="controls">
+  <span class="ctrl-label">期間</span>
+  <select id="rangeSelect">
+    <option value="12">直近12ヶ月</option>
+    <option value="24" selected>直近24ヶ月</option>
+    <option value="36">直近36ヶ月</option>
+    <option value="all">全期間</option>
+  </select>
+  <span class="ctrl-label">拠点フィルター</span>
+  <div class="legend-pills" id="pills"></div>
+  <button class="btn-reload" id="reloadBtn" onclick="loadData()">
+    <span id="reloadIco">↻</span> 最新データ取得
+  </button>
+</div>
+
+<main>
+  <div class="error-bar" id="errBar"></div>
+
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi-card"><div class="kpi-label">読み込み中…</div></div>
+  </div>
+
+  <div class="chart-row">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">月次倉庫費用推移</span>
+        <span class="panel-badge" id="chartBadge">—</span>
+      </div>
+      <div style="height:300px"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">拠点別構成比（最新月）</span>
+      </div>
+      <div style="height:300px"><canvas id="pieChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="tpanel">
+    <div class="panel-head">
+      <span class="panel-title">拠点別 月次明細（直近6ヶ月）</span>
+      <span class="panel-badge" id="tblBadge">—</span>
+    </div>
+    <div class="tscroll">
+      <table><thead><tr id="tblHead"></tr></thead><tbody id="tblBody"></tbody></table>
+    </div>
+  </div>
+
+  <div class="tpanel">
+    <div class="panel-head" style="padding:18px 22px 12px">
+      <span class="panel-title">運賃・諸掛 明細</span>
+      <span class="panel-badge" id="frBadge">—</span>
+    </div>
+    <div class="tscroll" style="max-height:340px">
+      <table><thead><tr id="frHead"></tr></thead><tbody id="frBody"></tbody></table>
+    </div>
+  </div>
+</main>
+
+<script>
+// ─── 拠点設定 ───────────────────────────────
+const VENDORS = [
+  { id:'ONKYO',    color:'#2563eb' },
+  { id:'gf',       color:'#16a34a' },
+  { id:'日通豊中',  color:'#d97706' },
+  { id:'佐川船橋',  color:'#dc2626' },
+  { id:'日通LA',    color:'#7c3aed' },
+  { id:'日通RTM',   color:'#0891b2' },
+  { id:'香港gf',    color:'#be185d' },
+];
+const VMAP = Object.fromEntries(VENDORS.map(v=>[v.id,v.color]));
+
+// ─── State ──────────────────────────────────
+let months        = [];
+let warehouseData = {};   // { vendor: { 'YYYY/MM': num } }
+let freightData   = [];   // [ {item,month,amount} ]
+let visible       = new Set(VENDORS.map(v=>v.id));
+let rangeSetting  = 24;
+let tChart=null, pChart=null;
+
+// ─── フォーマット ──────────────────────────
+const fmt  = n => n ? '¥'+Math.abs(n).toLocaleString('ja-JP') : '—';
+const fmtM = n => {
+  if(!n) return '—';
+  return n>=1e6 ? '¥'+(n/1e6).toFixed(2)+'M' : n>=1e3 ? '¥'+(n/1e3).toFixed(0)+'K' : '¥'+n.toLocaleString();
+};
+
+// ─── データ読み込み（GAS経由） ───────────────
+function loadData() {
+  showOv(true); setErr(''); setBtnLoading(true);
+  google.script.run
+    .withSuccessHandler(onData)
+    .withFailureHandler(onErr)
+    .getSheetData();
+}
+
+function onData(d) {
+  months        = d.months;
+  warehouseData = d.warehouse;
+  freightData   = d.freight;
+  showOv(false); setBtnLoading(false);
+  setSyncOK(d.updatedAt);
+  renderPills();
+  render();
+}
+
+function onErr(e) {
+  showOv(false); setBtnLoading(false);
+  setErr('データ取得エラー: ' + (e.message || e));
+  setSyncErr();
+}
+
+// ─── 表示月の計算 ────────────────────────────
+function visMon() {
+  const now = new Date();
+  const valid = months.filter(m=>{
+    const [y,mo]=m.split('/').map(Number);
+    return new Date(y,mo-1,1)<=now;
+  });
+  return rangeSetting==='all' ? valid : valid.slice(-rangeSetting);
+}
+
+function getVal(v,m){ return (warehouseData[v]||{})[m]||0; }
+function mTotal(m){ return [...visible].reduce((a,v)=>a+getVal(v,m),0); }
+
+// ─── Pills ──────────────────────────────────
+function renderPills(){
+  document.getElementById('pills').innerHTML = VENDORS.map(v=>`
+    <div class="lpill ${visible.has(v.id)?'active':''}" onclick="toggleV('${v.id}',this)">
+      <span class="dot" style="background:${v.color}"></span>${v.id}
+    </div>`).join('');
+}
+function toggleV(id,el){
+  if(visible.has(id)){if(visible.size===1)return;visible.delete(id);}
+  else visible.add(id);
+  el.classList.toggle('active'); render();
+}
+
+// ─── KPI ────────────────────────────────────
+function renderKPI(vis){
+  const lM=vis[vis.length-1], pM=vis[vis.length-2];
+  const tl=mTotal(lM), tp=mTotal(pM||lM);
+  const delta=tp?(tl-tp)/tp*100:0;
+  const tot=vis.reduce((a,m)=>a+mTotal(m),0);
+  const avg=Math.round(tot/vis.length);
+  const maxM=vis.reduce((b,m)=>mTotal(m)>mTotal(b)?m:b,vis[0]);
+  const t12=vis.slice(-12).reduce((a,m)=>a+mTotal(m),0);
+
+  document.getElementById('kpiGrid').innerHTML=[
+    {label:'直近月 合計', val:fmt(tl), sub:lM, delta:delta.toFixed(1)+'%', up:delta>0},
+    {label:`期間合計（${vis.length}ヶ月）`, val:fmtM(tot), sub:'選択期間'},
+    {label:'月次平均', val:fmtM(avg), sub:'選択期間'},
+    {label:'直近12ヶ月 合計', val:fmtM(t12), sub:'直近1年'},
+    {label:'最高費用月', val:maxM, sub:fmt(mTotal(maxM))},
+  ].map(k=>`
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-val">${k.val}</div>
+      <div class="kpi-sub">${k.sub}</div>
+      ${k.delta!==undefined?`<div class="kpi-delta ${k.up?'up':'down'}">${k.up?'▲':'▼'} ${Math.abs(parseFloat(k.delta)).toFixed(1)}% 前月比</div>`:''}
+    </div>`).join('');
+}
+
+// ─── Trend Chart ────────────────────────────
+function renderTrend(vis){
+  document.getElementById('chartBadge').textContent=`${vis[0]} → ${vis[vis.length-1]}`;
+  const av=VENDORS.filter(v=>visible.has(v.id));
+  const ptR=vis.length>24?1.5:3;
+
+  const ds=av.map(v=>({
+    label:v.id, data:vis.map(m=>getVal(v.id,m)),
+    borderColor:v.color, backgroundColor:v.color+'18',
+    fill:false, tension:.3, pointRadius:ptR, pointHoverRadius:5, borderWidth:2,
+  }));
+  ds.push({
+    label:'合計', data:vis.map(m=>mTotal(m)),
+    borderColor:'#1a1a1a', backgroundColor:'transparent',
+    fill:false, tension:.3, pointRadius:0, borderWidth:2.5, borderDash:[5,3],
+  });
+
+  const ctx=document.getElementById('trendChart').getContext('2d');
+  if(tChart) tChart.destroy();
+  tChart=new Chart(ctx,{
+    type:'line', data:{labels:vis,datasets:ds},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{labels:{color:'#7a7570',font:{family:'Noto Sans JP',size:11},padding:10,boxWidth:12}},
+        tooltip:{backgroundColor:'#fff',borderColor:'#ddd8d0',borderWidth:1,
+          titleColor:'#1a1a1a',bodyColor:'#7a7570',
+          callbacks:{label:c=>` ${c.dataset.label}: ¥${c.raw.toLocaleString('ja-JP')}`}}
+      },
+      scales:{
+        x:{ticks:{color:'#bbb8b0',font:{size:10},maxTicksLimit:12},grid:{color:'#f0ede8'}},
+        y:{ticks:{color:'#7a7570',font:{size:10},
+            callback:v=>v>=1e6?'¥'+(v/1e6).toFixed(1)+'M':v>=1e3?'¥'+(v/1e3).toFixed(0)+'K':'¥'+v},
+           grid:{color:'#f0ede8'}}
+      }
+    }
+  });
+}
+
+// ─── Pie Chart ──────────────────────────────
+function renderPie(vis){
+  const lM=vis[vis.length-1];
+  const av=VENDORS.filter(v=>visible.has(v.id));
+  const vals=av.map(v=>getVal(v.id,lM));
+  const tot=vals.reduce((a,v)=>a+v,0);
+  const ctx=document.getElementById('pieChart').getContext('2d');
+  if(pChart) pChart.destroy();
+  if(!tot) return;
+  pChart=new Chart(ctx,{
+    type:'doughnut',
+    data:{labels:av.map(v=>v.id),datasets:[{data:vals,backgroundColor:av.map(v=>v.color+'cc'),borderColor:'#fff',borderWidth:3}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,cutout:'62%',
+      plugins:{
+        legend:{labels:{color:'#7a7570',font:{family:'Noto Sans JP',size:11},padding:8,boxWidth:10}},
+        tooltip:{backgroundColor:'#fff',borderColor:'#ddd8d0',borderWidth:1,
+          titleColor:'#1a1a1a',bodyColor:'#7a7570',
+          callbacks:{label:c=>`¥${c.raw.toLocaleString('ja-JP')} (${tot?(c.raw/tot*100).toFixed(1):0}%)`}}
+      }
+    }
+  });
+}
+
+// ─── Warehouse Table ────────────────────────
+function renderTable(vis){
+  const showM=vis.slice(-6);
+  document.getElementById('tblBadge').textContent=`${showM[0]} ～ ${showM[showM.length-1]}`;
+  const av=VENDORS.filter(v=>visible.has(v.id));
+  document.getElementById('tblHead').innerHTML=
+    '<th>拠点</th>'+showM.map(m=>`<th>${m}</th>`).join('')+'<th>期間合計</th>';
+  const rows=av.map(v=>{
+    const vals=showM.map(m=>getVal(v.id,m));
+    return {v,vals,tot:vals.reduce((a,x)=>a+x,0)};
+  });
+  const cTots=showM.map((_,i)=>rows.reduce((a,r)=>a+r.vals[i],0));
+  const grand=cTots.reduce((a,v)=>a+v,0);
+  document.getElementById('tblBody').innerHTML=
+    rows.map(r=>`<tr>
+      <td><span class="dc" style="background:${VMAP[r.v.id]}"></span>${r.v.id}</td>
+      ${r.vals.map(v=>`<td class="${v?'':'cell-zero'}">${v?fmt(v):'—'}</td>`).join('')}
+      <td style="font-weight:600">${fmt(r.tot)||'—'}</td>
+    </tr>`).join('')+`
+    <tr class="total-row">
+      <td>月次合計</td>
+      ${cTots.map(t=>`<td>${fmt(t)}</td>`).join('')}
+      <td>${fmt(grand)}</td>
+    </tr>`;
+}
+
+// ─── Freight Table ──────────────────────────
+function renderFreight(vis){
+  const inR=freightData.filter(d=>vis.includes(d.month));
+  const showM=[...new Set(inR.map(d=>d.month))].sort();
+  if(!showM.length){
+    document.getElementById('frBadge').textContent='データなし';
+    document.getElementById('frHead').innerHTML='';
+    document.getElementById('frBody').innerHTML='<tr><td colspan="2" style="padding:20px;color:#bbb;text-align:center">選択期間内に運賃・諸掛データなし</td></tr>';
+    return;
+  }
+  document.getElementById('frBadge').textContent=`${showM[0]} ～ ${showM[showM.length-1]}`;
+  const items=[...new Set(inR.map(d=>d.item))];
+  document.getElementById('frHead').innerHTML=
+    '<th>品目</th>'+showM.map(m=>`<th>${m}</th>`).join('')+'<th>合計</th>';
+  const rows=items.map(item=>{
+    const vals=showM.map(m=>inR.filter(d=>d.item===item&&d.month===m).reduce((a,d)=>a+d.amount,0));
+    return {item,vals,tot:vals.reduce((a,v)=>a+v,0)};
+  }).sort((a,b)=>b.tot-a.tot);
+  const cTots=showM.map((_,i)=>rows.reduce((a,r)=>a+r.vals[i],0));
+  const grand=cTots.reduce((a,v)=>a+v,0);
+  document.getElementById('frBody').innerHTML=
+    rows.map(r=>`<tr>
+      <td>${r.item}</td>
+      ${r.vals.map(v=>`<td class="${v?'':'cell-zero'}">${v?fmt(v):'—'}</td>`).join('')}
+      <td style="font-weight:600">${fmt(r.tot)}</td>
+    </tr>`).join('')+`
+    <tr class="total-row">
+      <td>合計</td>
+      ${cTots.map(t=>`<td>${fmt(t)}</td>`).join('')}
+      <td>${fmt(grand)}</td>
+    </tr>`;
+}
+
+// ─── Render All ─────────────────────────────
+function render(){
+  if(!months.length) return;
+  const vis=visMon();
+  renderKPI(vis); renderTrend(vis); renderPie(vis); renderTable(vis); renderFreight(vis);
+}
+
+// ─── UI Helpers ─────────────────────────────
+function showOv(b){ document.getElementById('ov').classList.toggle('show',b); }
+function setErr(m){ const e=document.getElementById('errBar'); e.textContent=m; e.classList.toggle('show',!!m); }
+function setBtnLoading(b){
+  const btn=document.getElementById('reloadBtn'), ico=document.getElementById('reloadIco');
+  btn.disabled=b; ico.className=b?'spin':''; ico.textContent='↻';
+}
+function setSyncOK(t){
+  document.getElementById('syncDot').className='sync-dot ok';
+  document.getElementById('syncSt').textContent='同期済み';
+  document.getElementById('syncTime').textContent=t;
+}
+function setSyncErr(){
+  document.getElementById('syncDot').className='sync-dot err';
+  document.getElementById('syncSt').textContent='取得失敗';
+  document.getElementById('syncTime').textContent=new Date().toLocaleString('ja-JP');
+}
+
+// ─── Controls ───────────────────────────────
+document.getElementById('rangeSelect').addEventListener('change',e=>{
+  rangeSetting=e.target.value==='all'?'all':parseInt(e.target.value); render();
+});
+
+// ─── 起動 ────────────────────────────────────
+renderPills();
+loadData();
+</script>
+</body>
+</html>
